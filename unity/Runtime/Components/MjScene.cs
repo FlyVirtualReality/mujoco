@@ -1,3 +1,5 @@
+#define ADD_KINEMATICS
+
 // Copyright 2019 DeepMind Technologies Limited
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,6 +36,11 @@ public class MjScene : MonoBehaviour {
 
   public unsafe MujocoLib.mjModel_* Model = null;
   public unsafe MujocoLib.mjData_* Data = null;
+
+#if ADD_KINEMATICS
+  public enum SimulationMode { DYNAMIC, KINEMATIC };
+  public SimulationMode Mode = SimulationMode.DYNAMIC;
+#endif
 
   // Public and global access to the active MjSceneGenerationContext.
   // Throws an exception if accessed when the scene is not being generated.
@@ -94,6 +101,10 @@ public class MjScene : MonoBehaviour {
   }
 
   protected unsafe void FixedUpdate() {
+#if ADD_KINEMATICS
+    if (Mode != SimulationMode.DYNAMIC)
+      return;
+#endif
     preUpdateEvent?.Invoke(this, new MjStepArgs(Model, Data));
     StepScene();
     postUpdateEvent?.Invoke(this, new MjStepArgs(Model, Data));
@@ -101,11 +112,28 @@ public class MjScene : MonoBehaviour {
 
   public bool SceneRecreationAtLateUpdateRequested = false;
 
+#if ADD_KINEMATICS
+  public unsafe void SetKinematics(float[] qpos, int offset = 0, int length = 0)
+  {
+    int n = (length > 0) ? length : qpos.Length;
+    for (int i = 0; i < n; ++i)
+      Data->qpos[i + offset] = (double)qpos[i];
+  }
+#endif
+
   protected unsafe void LateUpdate() {
     if (SceneRecreationAtLateUpdateRequested) {
       RecreateScene();
       SceneRecreationAtLateUpdateRequested = false;
     }
+
+#if ADD_KINEMATICS
+    if (Mode == SimulationMode.KINEMATIC)
+    {
+      MujocoLib.mj_kinematics(Model, Data);
+      SyncUnityToMjState();
+    }
+#endif
   }
 
   // Context used during scene generation where components will store their shared dependencies
